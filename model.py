@@ -1,89 +1,45 @@
-from together import Together
 import json
-import re
-from dotenv import load_dotenv  # Import dotenv to load environment variables
-import os  # Import os to access environment variables
+from google.genai import Client  # Import Gemini API Client
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import os
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Set your API key here
-API_KEY = os.getenv("API_KEY")  # Get API key from environment variable
+# Initialize the Gemini client with API key from environment variable
+client = Client(api_key=os.getenv("GEMINI_API_KEY"))  # Get API key from environment variable
 
-# Initialize the client with the API key
-client = Together(api_key=API_KEY)
+# Define a Pydantic model for structured dish output
+class DishResponse(BaseModel):
+    food_name: str
+    description: str
+    ingredients: list[dict]
+    steps: list[dict]
+    total_time: str
+    conclusion: str
 
-# Example recipe output format
-example_output = {
-    "food_name": "Spaghetti Carbonara",
-    "description": "A classic Italian pasta dish made with eggs, cheese, pancetta, and pepper, delivering a rich, creamy, and savory taste in every bite.",
-    "ingredients": [
-        {"name": "Spaghetti", "quantity": "200g"},
-        {"name": "Eggs", "quantity": "2 large"},
-    ],
-    "steps": [
-        {
-            "index": 1,
-            "description": "Boil water in a large pot, add salt, and cook spaghetti until al dente.",
-            "time": "10 minutes",
-            "flame": "high"
-        },
-        {
-            "index": 2,
-            "description": "While pasta cooks, sauté pancetta in olive oil until crispy and golden.",
-            "time": "5 minutes",
-            "flame": "mid"
-        },
-        
-    ],
-    "total_time": "22 minutes",
-    "conclusion": "Great food brings people together. Enjoy this homemade delight!"
-}
+def generate_recipe(food_name):
+    prompt = f"""Generate a recipe in JSON format for the given food name.
 
-def extract_json(text):
-    """
-    Extracts a valid JSON object from a text response.
-    
-    Args:
-        text (str): The response text containing JSON.
-    
-    Returns:
-        dict: Parsed JSON object or an error message.
-    """
-    match = re.search(r"\{.*\}", text, re.DOTALL)  # Find JSON in text
-    if match:
-        json_text = match.group(0)
-        try:
-            return json.loads(json_text)
-        except json.JSONDecodeError:
-            return {"error": "Extracted text is not valid JSON.", "raw_text": json_text}
-    return {"error": "No JSON found in response.", "raw_text": text}
+    The recipe should follow this schema:
 
-def get_chat_response(user_message):
-    """
-    Calls the LLaMA API with system instructions to return a structured recipe in JSON format.
+    Recipe = {{
+        'recipe_name': str,
+        'description': str,
+        'ingredients': list[{{'name': str, 'quantity': str}}],
+        'steps': list[{{'index': int,'step_name': str, 'description': str, 'time': str, 'flame': str}}],
+        'total_time': str,
+        'conclusion': str
+    }}
 
-    Args:
-        user_message (str): The message from the user.
+    Food Name: "{food_name}"
 
-    Returns:
-        dict: The response from the LLaMA API in JSON format.
-    """
-    response = client.chat.completions.create(
-        model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
-        messages=[
-            {"role": "system", "content": "You are a recipe assistant. Always respond with a JSON object in the following format. If the data or the recipe is not available then give output 'Not trained for the recipe'.If prompt is irrelevent then give output as 'I dont know'"},
-            {"role": "system", "content": json.dumps(example_output, indent=2)},
-            {"role": "user", "content": user_message}
-        ]
+    Return: Recipe for the specified food name, including its name, description, ingredients, steps (with index, description, time, and flame), total time, and a conclusion statement."""
+
+    response = client.models.generate_content(
+        model='gemini-2.0-flash',
+        contents=prompt,
     )
 
-    model_response = response.choices[0].message.content
-
-    return extract_json(model_response)  # Extract and parse JSON
-
-
-# Example Usage
-user_prompt = "biriyani"
-recipe = get_chat_response(user_prompt)
-print(json.dumps(recipe, indent=2))
+    return response.text
